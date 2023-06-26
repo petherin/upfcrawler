@@ -2,14 +2,26 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/tebeka/selenium"
 	"github.com/tebeka/selenium/chrome"
-	"log"
 )
+
+const buttonTag = "button"
+const navItemIconClass = "h-nav__item-icon"
+const url = "https://groceries.asda.com"
+const driverBin = "chromedriver"
+const port = 4444
+const acceptButtonID = "onetrust-accept-btn-handler"
+const navMenuClass = "navigation-menu__item"
+const navMenuTextClass = "navigation-menu__text"
+const groceriesText = "Groceries"
 
 func main() {
 	// Run Chrome browser
-	service, err := selenium.NewChromeDriverService("chromedriver", 4444)
+	service, err := selenium.NewChromeDriverService(driverBin, port)
 	if err != nil {
 		panic(err)
 	}
@@ -21,7 +33,7 @@ func main() {
 		"--no-sandbox",
 		"--disable-dev-shm-usage",
 		"disable-gpu",
-		//"--headless",
+		"--headless",
 	}})
 
 	driver, err := selenium.NewRemote(caps, "")
@@ -29,102 +41,113 @@ func main() {
 		panic(err)
 	}
 
-	driver.Get("https://groceries.asda.com")
+	log.Printf("Going to %s...\n", url)
+	driver.Get(url)
 
 	var accept selenium.WebElement
 	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		accept, _ = driver.FindElement(selenium.ByID, "onetrust-accept-btn-handler")
+		time.Sleep(50 * time.Millisecond)
+		accept, _ = driver.FindElement(selenium.ByID, acceptButtonID)
 		return accept != nil, nil
 	})
 
-	//<menu data-auto-id="buttonMenuItem" type="menu" class="asda-btn asda-btn--clear asda-btn--fluid navigation-menu__item" aria-expanded="false" data-di-id="di-id-d052fc60-bb0f3692"><span class="navigation-menu__text">Groceries<span role="img" data-auto-id="" class="asda-icon asda-icon--charcoal asda-icon--tiny asda-icon--rotate0 navigation-menu__submenu-icon-chevron"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="744c7e0-e8489608" data-di-rand="1687714028831"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span></span></menu>
-	//accept, err := driver.FindElement(selenium.ByID, "onetrust-accept-btn-handler")
-	//if err != nil {
-	//	log.Panic(err)
-	//}
-	//titleChangeCondition := func(wd WebDriver) (bool, error) {
-	//	title, err := wd.Title()
-	//	if err != nil {
-	//		return false, err
-	//	}
-	//
-	//	return title == newTitle, nil
-	//}
-
-	//time.Sleep(1 * time.Second)
+	log.Println("Clicking Accept...")
 	accept.Click()
-	//<menu id="onetrust-accept-btn-handler" data-di-id="#onetrust-accept-btn-handler">I Accept</menu>
 
 	var navMenus []selenium.WebElement
 	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		navMenus, _ = driver.FindElements(selenium.ByClassName, "navigation-menu__item")
+		time.Sleep(50 * time.Millisecond)
+		navMenus, _ = driver.FindElements(selenium.ByClassName, navMenuClass)
 		return accept != nil, nil
 	})
 
-	//buttons, err := driver.FindElements(selenium.ByClassName, "navigation-menu__item")
-
 	var groceries selenium.WebElement
-
-	for _, menu := range navMenus {
-		btnElement, _ := menu.FindElement(selenium.ByClassName, "navigation-menu__text")
-		if btnElement != nil {
-			if text, _ := btnElement.Text(); text == "Groceries" {
-				groceries = btnElement
-				break
+	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
+		for _, menu := range navMenus {
+			time.Sleep(50 * time.Millisecond)
+			btnElement, _ := menu.FindElement(selenium.ByClassName, navMenuTextClass)
+			if btnElement != nil {
+				if text, _ := btnElement.Text(); text == groceriesText {
+					groceries = btnElement
+					return true, nil
+				}
 			}
 		}
-	}
 
-	//time.Sleep(1 * time.Second)
+		return false, nil
+	})
 
+	log.Println("Clicking Groceries...")
 	err = groceries.Click()
 	if err != nil {
 		log.Panic(err)
 	}
 
-	var col1 selenium.WebElement
+	aisles := []selenium.WebElement{}
+
+	aisles = openMenu(driver, 0, aisles)
+
+	log.Println("Finished")
+}
+
+// openMenu opens all items on a menu. Called recursively until we run out of submenus.
+// The first menu under Groceries opens a <ul> with class h-nav__list--1-columns.
+// This can be considered menu level 1. It contains an <li> for each menu item.
+// Hovering over a Groceries menu item opens a submenu that is menu level 2. The submenu is displayed
+// by showing two <ul> elements with class h-nav__list--2-columns.
+// The first is the Groceries menu and the second is the submenu.
+// Each new submenu shows a new set of <ul> elements where the
+// number (n) in the h-nav__list--n-columns class matches the menu level.
+// The number of <ul> elements matches the number in h-nav__list--n-columns.
+func openMenu(driver selenium.WebDriver, menuLevel int, aisles []selenium.WebElement) []selenium.WebElement {
+	columnClass := fmt.Sprintf("h-nav__list--%d-columns", menuLevel+1)
+
+	var navCol []selenium.WebElement
 	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		col1, _ = driver.FindElement(selenium.ByClassName, "h-nav__list--1-columns")
-		return col1 != nil, nil
+		time.Sleep(50 * time.Millisecond)
+		navCol, _ = driver.FindElements(selenium.ByClassName, columnClass)
+		return navCol != nil, nil
 	})
 
-	var itemsCol1 []selenium.WebElement
+	if len(navCol) == 0 {
+		return aisles
+	}
+
+	var allButtons []selenium.WebElement
 	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		itemsCol1, _ = col1.FindElements(selenium.ByClassName, "h-nav__item-text")
-		return itemsCol1 != nil, nil
+		time.Sleep(50 * time.Millisecond)
+		allButtons, _ = navCol[menuLevel].FindElements(selenium.ByTagName, buttonTag)
+		return allButtons != nil, nil
 	})
 
-	for _, itemCol1 := range itemsCol1 {
-		fmt.Println(itemCol1.Text())
+	aisleButtons := []selenium.WebElement{}
+	subMenuButtons := []selenium.WebElement{}
+	for _, btn := range allButtons {
+		hasSubMenuIcon, _ := btn.FindElements(selenium.ByClassName, navItemIconClass)
+		if len(hasSubMenuIcon) == 0 {
+			aisleButtons = append(aisleButtons, btn)
+			continue
+		}
+
+		subMenuButtons = append(subMenuButtons, btn)
 	}
-	for {
+
+	for _, subMenuButton := range subMenuButtons {
+		err := subMenuButton.MoveTo(10, 10)
+		if err != nil {
+			log.Print("couldn't move to submenu button, skipping")
+			continue
+		}
+
+		time.Sleep(200 * time.Millisecond)
+		txt, _ := subMenuButton.Text()
+		log.Printf("Opening menu %s\n", txt)
+		aisles = openMenu(driver, menuLevel+1, aisles)
 	}
-	//	col1,err:=driver.FindElements(selenium.ByClassName,"h-nav__list--1-columns")
-	//	if err!=nil{
-	//		log.Panic(err)
-	//	}
-	//
-	//fmt.Println(col1)
 
-	//<span class="navigation-menu__text">
-	//Groceries
-	//<span role="img" data-auto-id="" class="asda-icon asda-icon--charcoal asda-icon--tiny asda-icon--rotate0 navigation-menu__submenu-icon-chevron">
-	//<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="744c7e0-e8489608" data-di-rand="1687714028831"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd">
-	//</path>
-	//</svg>
-	//</span>
-	//</span>
+	aisles = append(aisles, aisleButtons...)
 
-	//<ul class="h-nav__list h-nav__list--1-columns">
-	//<li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--active h-nav__item-menu--bold" type="menu" data-di-id="di-id-c18a37a9-926820ff"> <span class="h-nav__item-text">Asda Rewards</span></menu></li>
-	//<li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-dc53cce4-90d136d6"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="9cc92ad2-509091b" data-di-rand="1687716310913"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg>< span><span class="h-nav__item-text">Summer</span></menu></li>
-	//<li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-c18a37a9-56dc9c5e"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="9cc92ad2-5b71276d" data-di-rand="1687716310913"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Price Locked</span></menu></li>
-	//<li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-a098cbff"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="11e126b-19f2a13e" data-di-rand="1687716310914"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Fruit, Veg &amp; Flowers</span></menu></li>
-	//<li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-cbaa4ea7"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="11e126b-7fcb5c81" data-di-rand="1687716310914"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Meat, Poultry &amp; Fish</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-dc53cce4-741285d0"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="11e126b-e65d83a0" data-di-rand="1687716310914"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Bakery</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-c18a37a9-ec90e6a0"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="b9a2750e-dc82a098" data-di-rand="1687716310915"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Chilled Food</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-c18a37a9-98444d67"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="b9a2750e-248dcc35" data-di-rand="1687716310915"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Frozen Food</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-bca8635d-a1d2b1c6"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="b9a2750e-acd5b7dd" data-di-rand="1687716310916"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Food Cupboard</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-dc53cce4-5882ecf3"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="ab17dae0-d112ba4d" data-di-rand="1687716310916"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Drinks</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-e5b7a9fe"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="ab17dae0-1c88a72d" data-di-rand="1687716310916"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Beer, Wine &amp; Spirits</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-a69997f4"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="ab17dae0-1f5f37e2" data-di-rand="1687716310917"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Toiletries &amp; Beauty</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-540be24a"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="13abbd85-83f54839" data-di-rand="1687716310917"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Laundry &amp; Household</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-4e89e58c"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="13abbd85-47a77a01" data-di-rand="1687716310917"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Baby, Toddler &amp; Kids</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-140e7c79-174b7483"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="4bc8add3-6863fca" data-di-rand="1687716310918"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Pet Food &amp; Accessories</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-452c3c4f-d668619"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="4bc8add3-22cd49fc" data-di-rand="1687716310918"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Health &amp; Wellness</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-a38e657b"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="4bc8add3-b4588a77" data-di-rand="1687716310918"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Home &amp; Entertainment</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-c18a37a9-78be9895"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="d62abd52-318f2b16" data-di-rand="1687716310919"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Free From...</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-4a464c-65708c06"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="f374cab6-1f1a74a5" data-di-rand="1687716310919"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Vegan &amp; Plant Based</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-452c3c4f-953704"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="f374cab6-28e5feaa" data-di-rand="1687716310919"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">World &amp; Local Food</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-41d743dc-47d92ef3"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="dfb51a7b-2a80751a" data-di-rand="1687716310920"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Organic</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-c18a37a9-80c399b"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="c9dcffec-29a62cea" data-di-rand="1687716310920"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Eid Mubarak</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-c18a37a9-df4b3b"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="c9dcffec-afc27342" data-di-rand="1687716310921"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Big Night In</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-bca8635d-61ce2c51"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="71609889-4d58afef" data-di-rand="1687716310921"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Extra Special</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-bca8635d-3742c1ce"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="71609889-285c9fca" data-di-rand="1687716310921"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Better For You</span></menu></li><li class="h-nav__item"><menu class="h-nav__item-menu h-nav__item-menu--has-children" type="menu" aria-expanded="true" data-di-id="di-id-c18a37a9-128c10b4"><span role="img" data-auto-id="" class="asda-icon asda-icon--dark-gray asda-icon--small asda-icon--rotate270 h-nav__item-icon"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" data-di-res-id="63d53767-6ae72147" data-di-rand="1687716310922"><path d="M16.46 19.339l9.193-9.193a.5.5 0 01.707 0l.707.708a.5.5 0 010 .707l-9.546 9.546a2 2 0 01-2.829 0L5.146 11.56a.5.5 0 010-.707l.708-.708a.5.5 0 01.707 0l9.192 9.193a.5.5 0 00.707 0z" fill="#3d3d3d" class="asda-icon__draw" fill-rule="evenodd"></path></svg></span><span class="h-nav__item-text">Price Match</span></menu></li></ul>
+	log.Printf("Aisle links %d\n", len(aisles))
 
-	//	fmt.Println(driver.PageSource())
-
-	//for {
-	//
-	//}
+	return aisles
 }
