@@ -1,15 +1,11 @@
 # UPF Crawler
 
-Use Selenium and Chrome Driver to open site and click links to get HTML from JavaScript.
+Uses github.com/tebeka/selenium and Chrome Driver to open online supermarket site and crawl for all product pages.
 
-Get Selenium: `go get github.com/tebeka/selenium`
+Depends on Chrome Driver which is included in the `bin` folder. If it fails to run on a Mac, `cd bin` and run `xattr -d com.apple.quarantine chromedriver`.
 
-Install Chrome Driver from https://chromedriver.chromium.org/downloads
+To install Chrome Driver onto your machine, get it from https://chromedriver.chromium.org/downloads
 
 Move it to: `sudo mv chromedriver /usr/local/bin`
 
-Allow Mac to run it with: `xattr -d com.apple.quarantine chromedriver`
-
-Should get this working in Docker.
-
-Need to click each aisle link to see a list of products, click on each one, get ingredients.
+Allow Mac to run it by `cd`'ing to `/usr/local/bin` and running: `xattr -d com.apple.quarantine chromedriver`

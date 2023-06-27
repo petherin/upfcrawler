@@ -1,26 +1,27 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/tebeka/selenium"
 	"github.com/tebeka/selenium/chrome"
 )
 
-const buttonTag = "button"
-const navItemIconClass = "h-nav__item-icon"
-const url = "https://groceries.asda.com"
-const driverBin = "chromedriver"
+const url = "https://groceries.asda.com/sitemap"
+const driverBin = "./bin/chromedriver"
 const port = 4444
-const acceptButtonID = "onetrust-accept-btn-handler"
-const navMenuClass = "navigation-menu__item"
-const navMenuTextClass = "navigation-menu__text"
-const groceriesText = "Groceries"
+
+type Link struct {
+	URL  string
+	Text string
+}
 
 func main() {
-	// Run Chrome browser
 	service, err := selenium.NewChromeDriverService(driverBin, port)
 	if err != nil {
 		panic(err)
@@ -41,113 +42,89 @@ func main() {
 		panic(err)
 	}
 
-	log.Printf("Going to %s...\n", url)
+	// Go to site map
+	log.Printf("Going to %s\n", url)
 	driver.Get(url)
 
-	var accept selenium.WebElement
+	// Wait until the last item, identified by XPATH, is loaded.
+	var lastItem []selenium.WebElement
 	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
 		time.Sleep(50 * time.Millisecond)
-		accept, _ = driver.FindElement(selenium.ByID, acceptButtonID)
-		return accept != nil, nil
+		lastItem, _ = driver.FindElements(selenium.ByXPATH, "/html/body/div[1]/div[2]/section/main/div[4]/div/div[50]/div[4]/div[2]/li/a/span")
+		return len(lastItem) > 0, nil
 	})
 
-	log.Println("Clicking Accept...")
-	accept.Click()
-
-	var navMenus []selenium.WebElement
-	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		time.Sleep(50 * time.Millisecond)
-		navMenus, _ = driver.FindElements(selenium.ByClassName, navMenuClass)
-		return accept != nil, nil
-	})
-
-	var groceries selenium.WebElement
-	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		for _, menu := range navMenus {
-			time.Sleep(50 * time.Millisecond)
-			btnElement, _ := menu.FindElement(selenium.ByClassName, navMenuTextClass)
-			if btnElement != nil {
-				if text, _ := btnElement.Text(); text == groceriesText {
-					groceries = btnElement
-					return true, nil
-				}
-			}
-		}
-
-		return false, nil
-	})
-
-	log.Println("Clicking Groceries...")
-	err = groceries.Click()
+	// Get all anchor tags in the site map
+	anchors, err := driver.FindElements(selenium.ByTagName, "a")
 	if err != nil {
-		log.Panic(err)
+		log.Fatal(err)
 	}
 
-	aisles := []selenium.WebElement{}
+	shelvesAisles := []Link{}
 
-	aisles = openMenu(driver, 0, aisles)
-
-	log.Println("Finished")
-}
-
-// openMenu opens all items on a menu. Called recursively until we run out of submenus.
-// The first menu under Groceries opens a <ul> with class h-nav__list--1-columns.
-// This can be considered menu level 1. It contains an <li> for each menu item.
-// Hovering over a Groceries menu item opens a submenu that is menu level 2. The submenu is displayed
-// by showing two <ul> elements with class h-nav__list--2-columns.
-// The first is the Groceries menu and the second is the submenu.
-// Each new submenu shows a new set of <ul> elements where the
-// number (n) in the h-nav__list--n-columns class matches the menu level.
-// The number of <ul> elements matches the number in h-nav__list--n-columns.
-func openMenu(driver selenium.WebDriver, menuLevel int, aisles []selenium.WebElement) []selenium.WebElement {
-	columnClass := fmt.Sprintf("h-nav__list--%d-columns", menuLevel+1)
-
-	var navCol []selenium.WebElement
-	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		time.Sleep(50 * time.Millisecond)
-		navCol, _ = driver.FindElements(selenium.ByClassName, columnClass)
-		return navCol != nil, nil
-	})
-
-	if len(navCol) == 0 {
-		return aisles
-	}
-
-	var allButtons []selenium.WebElement
-	driver.Wait(func(wd selenium.WebDriver) (bool, error) {
-		time.Sleep(50 * time.Millisecond)
-		allButtons, _ = navCol[menuLevel].FindElements(selenium.ByTagName, buttonTag)
-		return allButtons != nil, nil
-	})
-
-	aisleButtons := []selenium.WebElement{}
-	subMenuButtons := []selenium.WebElement{}
-	for _, btn := range allButtons {
-		hasSubMenuIcon, _ := btn.FindElements(selenium.ByClassName, navItemIconClass)
-		if len(hasSubMenuIcon) == 0 {
-			aisleButtons = append(aisleButtons, btn)
-			continue
-		}
-
-		subMenuButtons = append(subMenuButtons, btn)
-	}
-
-	for _, subMenuButton := range subMenuButtons {
-		err := subMenuButton.MoveTo(10, 10)
+	// Iterate over `a` tags and collect the aisle and shelf links.
+	for _, a := range anchors {
+		href, err := a.GetAttribute("href")
 		if err != nil {
-			log.Print("couldn't move to submenu button, skipping")
+			log.Println(err)
 			continue
 		}
 
-		time.Sleep(200 * time.Millisecond)
-		txt, _ := subMenuButton.Text()
-		log.Printf("Opening menu %s\n", txt)
-		aisles = openMenu(driver, menuLevel+1, aisles)
+		if strings.Contains(href, "/shelf/") || strings.Contains(href, "/aisle/") {
+			txt, _ := a.Text()
+			log.Printf("Adding shelf/aisle Link %s\n", href)
+			shelvesAisles = append(shelvesAisles, Link{
+				URL:  href,
+				Text: txt,
+			})
+		}
 	}
 
-	aisles = append(aisles, aisleButtons...)
+	productPages := []Link{}
 
-	log.Printf("Aisle links %d\n", len(aisles))
+	for _, shelfAisle := range shelvesAisles {
+		if strings.Contains(shelfAisle.Text, "View All") {
+			continue
+		}
 
-	return aisles
+		log.Printf("Going to %s\n", shelfAisle.URL)
+		driver.Get(shelfAisle.URL)
+
+		// Wait for main product list to load.
+		var mainProductDiv selenium.WebElement
+		driver.Wait(func(wd selenium.WebDriver) (bool, error) {
+			time.Sleep(50 * time.Millisecond)
+			mainProductDiv, _ = driver.FindElement(selenium.ByClassName, "co-product-list__main-cntr")
+			return mainProductDiv != nil, nil
+		})
+
+		// Get all anchor tags inside main product list.
+		var productAnchors []selenium.WebElement
+		driver.Wait(func(wd selenium.WebDriver) (bool, error) {
+			time.Sleep(50 * time.Millisecond)
+			productAnchors, _ = mainProductDiv.FindElements(selenium.ByTagName, "a")
+			return len(productAnchors) > 0, nil
+		})
+
+		// Iterate over anchors and get the urls.
+		for _, a := range productAnchors {
+			href, err := a.GetAttribute("href")
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			txt, _ := a.Text()
+			log.Printf("Adding product page %s\n", href)
+			productPages = append(productPages, Link{
+				URL:  href,
+				Text: txt,
+			})
+		}
+	}
+
+	fmt.Println(len(productPages))
+
+	file, _ := json.MarshalIndent(productPages, "", " ")
+	_ = os.WriteFile("./productlinks.json", file, 0644)
 }
