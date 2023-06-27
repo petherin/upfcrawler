@@ -1,4 +1,4 @@
-package main
+package asda
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 )
 
 const url = "https://groceries.asda.com/sitemap"
-const driverBin = "./bin/chromedriver"
+const driverBin = "bin/chromedriver"
 const port = 4444
 
 type Link struct {
@@ -21,7 +21,7 @@ type Link struct {
 	Text string
 }
 
-func main() {
+func Crawl() {
 	service, err := selenium.NewChromeDriverService(driverBin, port)
 	if err != nil {
 		panic(err)
